@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+
+config.json
+
+# Python cache + bytecode (top-level & nested)
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Build artifacts
+Builds/
+
+# Keep empty folders but ignore contents
+models/whisper/*
+!models/whisper/.gitkeep
+
+Whisper_win-x64/*
+!Whisper_win-x64/.gitkeep
