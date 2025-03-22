@@ -523,6 +523,8 @@ class SoftWhisper:
             font=("Arial", 10)
         )
         self.transcription_box.pack(pady=5, fill="both", expand=True)
+        for key in ("<Up>", "<Down>", "<Left>", "<Right>"):
+            self.transcription_box.bind(key, lambda e: "break")
         
         # Optional: add a small note that edits won't be saved on export
         note_label = tk.Label(transcription_frame, text="Note: Manual edits are not preserved when exporting", 
@@ -608,34 +610,36 @@ class SoftWhisper:
             try:
                 with open(CONFIG_FILE, 'r') as f:
                     config = json.load(f)
-                    self.beam_size_var.set(config.get('beam_size', 5))
-                    if 'WHISPER_CPP_PATH' in config:
-                        self.WHISPER_CPP_PATH.set(config.get('WHISPER_CPP_PATH'))
-                    else:
-                        self.WHISPER_CPP_PATH.set(get_default_whisper_cpp_path())
-                debug_print("Configuration loaded.")
+                # Restore beam size
+                self.beam_size_var.set(config.get('beam_size', 5))
+                # Restore Whisper path
+                self.WHISPER_CPP_PATH.set(config.get('WHISPER_CPP_PATH', get_default_whisper_cpp_path()))
+                # Restore last‑opened folder
+                self.last_dir = config.get('last_dir', os.getcwd())
+                debug_print(f"Configuration loaded: {config}")
             except Exception as e:
                 debug_print(f"Error loading config: {e}")
         else:
             self.WHISPER_CPP_PATH.set(get_default_whisper_cpp_path())
-            debug_print("No configuration file found; using default WHISPER_CPP_PATH.")
+            debug_print("No configuration file found; using defaults.")
 
     def save_config(self, *args, **kwargs):
-        debug_print("Saving configuration")
         config = {
             'beam_size': self.beam_size_var.get(),
-            'WHISPER_CPP_PATH': self.WHISPER_CPP_PATH.get()
+            'WHISPER_CPP_PATH': self.WHISPER_CPP_PATH.get(),
+            'last_dir': self.last_dir
         }
         try:
-            with open(CONFIG_FILE, 'w') as f:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4)
-            debug_print("Configuration saved.")
+
         except Exception as e:
             debug_print(f"Error saving config: {e}")
 
     def setup_callbacks(self):
         debug_print("Setting up callbacks")
         self.model_var.trace("w", self.save_config)
+        self.beam_size_var.trace("w", self.save_config)
         self.check_queues()
 
     def load_model(self):
@@ -707,9 +711,13 @@ class SoftWhisper:
         debug_print("User requested file selection")
         file_path = filedialog.askopenfilename(
             title="Select Audio/Video File",
+            initialdir=self.last_dir,
             filetypes=[("Audio/Video Files", "*.wav *.mp3 *.m4a *.flac *.ogg *.wma *.mp4 *.mov *.avi *.mkv"), ("All Files", "*.*")]
         )
         if file_path:
+            self.last_dir = os.path.dirname(file_path)
+            self.save_config()
+
             self.file_path = file_path
             filename = os.path.basename(file_path)
             if len(filename) > 50:
@@ -733,7 +741,6 @@ class SoftWhisper:
             self.play_button.config(state=tk.NORMAL)
             self.pause_button.config(state=tk.NORMAL)
             self.stop_media_button.config(state=tk.NORMAL)
-
             self.root.update_idletasks()
         else:
             self.file_path = None
