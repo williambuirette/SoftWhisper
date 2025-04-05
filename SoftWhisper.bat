@@ -10,6 +10,13 @@ if %errorlevel% neq 0 (
   set MISSING_PACKAGES=!MISSING_PACKAGES! psutil
 )
 
+:: Check psutil
+python -c "import inaSpeechSegmenter" 2>nul
+if %errorlevel% neq 0 (
+  set MISSING_PACKAGES=!MISSING_PACKAGES! inaSpeechSegmenter
+)
+
+
 :: Check pydub
 python -c "import pydub" 2>nul
 if %errorlevel% neq 0 (

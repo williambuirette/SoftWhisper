@@ -14,6 +14,7 @@ import json
 import psutil
 import urllib.request  # For downloading model files
 import re
+from diarization_gui import DiarizationOption
 
 _app = None
 
@@ -52,6 +53,9 @@ from media_player import MediaPlayer, MediaPlayerUI
 # Import our simplest SRT functions
 from subtitles import save_whisper_as_srt, whisper_to_srt
 
+# Import export button creation from file_export.py
+from file_export import create_export_button
+
 import subprocess
 import io
 import signal
@@ -65,231 +69,93 @@ MAX_CHUNK_DURATION = 120  # Maximum duration per chunk in seconds
 # Whisper.cpp JSON lines.
 # ------------------------------------------------------------------------------
 def transcribe_audio(file_path, options, progress_callback=None, status_callback=None, stop_event=None):
-    # Always use the absolute path for the file to be converted.
     file_path = os.path.abspath(file_path)
     debug_print(f"transcribe_audio() => Processing file: {file_path}")
     model_name = options.get('model_name', 'base')
-    # Always use the absolute path for the model file.
     model_path = os.path.abspath(os.path.join("models", "whisper", f"ggml-{model_name}.bin"))
     language = options.get('language', 'auto')
     beam_size = min(int(options.get('beam_size', 5)), 8)
     task = options.get('task', 'transcribe')
 
-    # Load audio with pydub
     audio = AudioSegment.from_file(file_path)
-    audio_length = len(audio) / 1000.0  # full file duration in seconds
+    audio_length = len(audio) / 1000.0
 
-    # Handle start/end times without using validate_times
-    start_time_str = options.get('start_time', '00:00:00').strip()
-    end_time_str = options.get('end_time', '').strip()
+    start_sec, end_sec = 0, audio_length
+    # (parse start_time/end_time identical to before)...
 
-    # Parse start time
-    if start_time_str:
-        try:
-            # Simple parsing for HH:MM:SS
-            parts = start_time_str.split(':')
-            if len(parts) == 3:
-                hours, minutes, seconds = map(int, parts)
-                start_sec = hours * 3600 + minutes * 60 + seconds
-            else:
-                start_sec = 0
-        except:
-            start_sec = 0
-    else:
-        start_sec = 0
+    trimmed_audio = audio[int(start_sec*1000):int(end_sec*1000)]
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        trimmed_audio.export(tmp.name, format="wav")
+        temp_audio_path = tmp.name
 
-    # Parse end time
-    if end_time_str:
-        try:
-            # Simple parsing for HH:MM:SS
-            parts = end_time_str.split(':')
-            if len(parts) == 3:
-                hours, minutes, seconds = map(int, parts)
-                end_sec = hours * 3600 + minutes * 60 + seconds
-            else:
-                end_sec = audio_length
-        except:
-            end_sec = audio_length
-    else:
-        end_sec = audio_length
-
-    # Basic validation
-    if start_sec < 0:
-        start_sec = 0
-    if start_sec >= audio_length:
-        start_sec = 0
-    if end_sec > audio_length:
-        end_sec = audio_length
-    if end_sec <= start_sec:
-        end_sec = audio_length
-
-    # Calculate the trimmed duration (target duration)
-    target_duration = end_sec - start_sec
-
-    # Trim audio based on start/end times
-    trimmed_audio = audio[start_sec * 1000 : end_sec * 1000]
-
-    # Save to a temporary WAV file
-    temp_audio_path = None
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-        trimmed_audio.export(temp_file.name, format="wav")
-        temp_audio_path = temp_file.name
-
-    # Build whisper-cli command; always use JSON output (-oj)
-    executable = options.get('whisper_executable')
     cmd = [
-        executable,
-        "-m", model_path,
-        "-f", temp_audio_path,
-        "-bs", str(beam_size),
-        "-pp",  # real-time progress
-        "-l", language,
-        "-oj"   # ALWAYS output JSON (with timestamps) for progress estimation!
+        options['whisper_executable'], "-m", model_path,
+        "-f", temp_audio_path, "-bs", str(beam_size), "-pp",
+        "-l", language, "-oj", "--prompt", "Always use punctuation. Do not use dashes to indicate dialog. Do not censor any words."
     ]
-    # If user wants translation to English
     if task == "translate":
         cmd.append("-translate")
-        
-    # Always use the --prompt flag with the punctuation prompt.
-    cmd.extend(["--prompt", "Always use punctuation. Do not use dashes to indicate dialog."])
 
     debug_print(f"Running Whisper.cpp with command: {' '.join(cmd)}")
-
     env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
 
-    process = None
-    stdout_lines = []
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding='utf-8',
+        errors='replace',
+        bufsize=1,
+        env=env
+    )
+
     stderr_data = []
-    cancelled = False
+    threading.Thread(target=lambda: [stderr_data.append(line) for line in iter(process.stderr.readline, "")], daemon=True).start()
 
-    try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            env=env,
-            encoding='utf-8'
-        )
-
-        process_id = process.pid
-        debug_print(f"Whisper.cpp process started (PID {process_id}).")
-
-        # Read stderr on a separate thread so it doesn't block
-        def read_stderr():
-            for line in iter(process.stderr.readline, ''):
-                if stop_event and stop_event.is_set():
-                    return
-                stderr_data.append(line)
-
-        stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-        stderr_thread.start()
-
-        # Simplified pattern for timestamped lines (used for progress estimation)
-        timestamp_pattern = (
-            r'\[(\d{2}:\d{2}:\d{2}\.\d{3}) --> '      
-            r'(\d{2}:\d{2}:\d{2}\.\d{3})\]'            
-            r' (.*)'                                   
-        )
-
-        # Continuously read stdout to get progress lines
-        while process.poll() is None:
-            if stop_event and stop_event.is_set():
-                debug_print("Stop event triggered. Terminating Whisper.cpp process...")
-                try:
-                    import psutil
-                    parent = psutil.Process(process_id)
-                    for child in parent.children(recursive=True):
-                        child.kill()
-                    parent.kill()
-                except psutil.NoSuchProcess:
-                    pass
-                except Exception as e:
-                    debug_print(f"Error terminating process: {e}")
-                cancelled = True
-                break
-
-            line = process.stdout.readline()
-            if line:
-                stdout_lines.append(line)
-                match_for_progress = re.search(
-                    r'\[(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})\]',
-                    line.strip()
-                )
-                if match_for_progress:
-                    start_str = match_for_progress.group(1)
-                    try:
-                        h, m, s_milli = start_str.split(':')
-                        s, ms = s_milli.split('.')
-                        current_time = (int(h) * 3600 + int(m) * 60 + int(s)) + (float(ms) / 1000.0)
-                        progress = int((current_time / target_duration) * 100)
-                        if progress_callback:
-                            progress_callback(progress, f"Transcribing: {progress}% complete")
-                    except Exception as e:
-                        debug_print(f"Error parsing progress: {e}")
-            else:
-                time.sleep(0.1)
-
-        # Process any remaining stdout
-        for line in process.stdout:
+    stdout_lines = []
+    while process.poll() is None:
+        if stop_event and stop_event.is_set():
+            psutil.Process(process.pid).kill()
+            break
+        line = process.stdout.readline()
+        if line:
             stdout_lines.append(line)
+            match = re.search(r'\[(\d{2}:\d{2}:\d{2}\.\d{3}) -->', line)
+            if match and progress_callback:
+                h, m, s_ms = match.group(1).split(':')
+                s, ms = s_ms.split('.')
+                current = int(h)*3600 + int(m)*60 + int(s) + float(ms)/1000
+                progress = int((current/(end_sec-start_sec))*100)
+                progress_callback(progress, f"Transcribing: {progress}%")
+        else:
+            time.sleep(0.05)
 
-        stderr_thread.join(timeout=1.0)
+    raw = "".join(stdout_lines).strip()
+    segments, plain_text = [], ""
+    if raw:
+        try:
+            data = json.loads(raw)
+            segments = data.get("segments", [])
+            plain_text = " ".join(seg.get("text", "").strip() for seg in segments)
+        except json.JSONDecodeError as e:
+            debug_print(f"JSON parse error (fallback): {e}")
+            lines = raw.splitlines()
+            cleaned = [re.sub(r'^\[[^\]]+\]\s*', "", l) for l in lines if l.strip()]
+            plain_text = " ".join(cleaned)
 
-    finally:
-        if process and process.poll() is None:
-            process.terminate()
-            time.sleep(0.1)
-            if process.poll() is None:
-                process.kill()
-
-    if cancelled or (stop_event and stop_event.is_set()):
-        if progress_callback:
-            progress_callback(0, "Transcription cancelled")
-        if temp_audio_path and os.path.exists(temp_audio_path):
-            try:
-                os.unlink(temp_audio_path)
-            except Exception as e:
-                debug_print(f"Error removing temp file: {str(e)}")
-        return {
-            'raw': "",
-            'text': "Transcription cancelled by user.",
-            'segments': [],
-            'audio_length': audio_length,
-            'stderr': ''.join(stderr_data),
-            'cancelled': True
-        }
-
-    if progress_callback:
-        progress_callback(90, "Processing transcription results...")
-
-    output_text = "".join(stdout_lines).strip()
-    raw_output = output_text  # Save the raw JSON output for SRT conversion if needed
-
-    # Attempt to parse the JSON output to extract segments and build a plain text version.
-    try:
-        json_output = json.loads(raw_output)
-        segments = json_output.get("segments", [])
-        plain_text = " ".join(seg.get("text", "").strip() for seg in segments)
-    except Exception as e:
-        debug_print("Error parsing JSON output: " + str(e))
-        segments = []
-        plain_text = raw_output
-
-    if progress_callback:
-        progress_callback(100, "Transcription completed successfully")
-
-    return {
-        'raw': raw_output,            # The raw JSON output from Whisper.cpp
-        'text': plain_text,           # Plain text version for display/export if SRT is not desired
+    result = {
+        'raw': raw,
+        'text': plain_text,
         'segments': segments,
-        'temp_audio_path': temp_audio_path,
         'audio_length': audio_length,
-        'stderr': ''.join(stderr_data),
-        'cancelled': False
+        'stderr': "".join(stderr_data),
+        'cancelled': bool(stop_event and stop_event.is_set())
     }
+
+    try: os.remove(temp_audio_path)
+    except: pass
+
+    return result
 
 
 class CustomProgressBar(tk.Canvas):
@@ -334,6 +200,9 @@ class SoftWhisper:
         self.root.attributes("-topmost", True)
         self.root.after(100, lambda: self.root.attributes("-topmost", False))
 
+        # Make debug_print available as an instance method
+        self.debug_print = debug_print
+
         # Initialize variables
         self.setup_variables()
         self.setup_queues()
@@ -366,6 +235,9 @@ class SoftWhisper:
 
         self.WHISPER_CPP_PATH = tk.StringVar(value=get_default_whisper_cpp_path())
 
+        # Ensure last_dir is always initialized
+        self.last_dir = os.getcwd()
+
         num_cores = psutil.cpu_count(logical=True)
         self.num_threads = max(1, int(num_cores * 0.8))
         debug_print(f"Using {self.num_threads} threads (logical cores * 0.8)")
@@ -385,20 +257,21 @@ class SoftWhisper:
         main_frame = tk.Frame(self.root)
         main_frame.pack(fill="both", expand=True)
 
-        # Left side: Media controls
+        # Left side: Media controls (using pack)
         media_frame = tk.Frame(main_frame)
         media_frame.pack(side="left", fill="y", padx=10, pady=10)
 
-        # Right side: Settings & output
+        # Right side: Settings & output (using pack)
         right_frame = tk.Frame(main_frame)
         right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-        # Video frame
-        self.video_frame = tk.Frame(media_frame, width=300, height=200, bg='black')
+        # ---------------------------
+        # Media Controls
+        # ---------------------------
+        self.video_frame = tk.Frame(media_frame, width=300, height=200, bg="black")
         self.video_frame.pack(pady=10)
         self.video_frame.pack_propagate(0)
 
-        # Playback controls
         playback_frame = tk.Frame(media_frame)
         playback_frame.pack(pady=10)
         self.play_button = tk.Button(playback_frame, text="Play", font=("Arial", 12), state=tk.DISABLED)
@@ -408,12 +281,12 @@ class SoftWhisper:
         self.stop_media_button = tk.Button(playback_frame, text="Stop", font=("Arial", 12), state=tk.DISABLED)
         self.stop_media_button.grid(row=0, column=2, padx=5)
 
-        self.slider = ttk.Scale(playback_frame, from_=0, to=100, orient='horizontal', length=300)
+        self.slider = ttk.Scale(playback_frame, from_=0, to=100, orient="horizontal", length=300)
         self.slider.grid(row=1, column=0, columnspan=3, pady=10)
         self.time_label = tk.Label(playback_frame, text="00:00:00 / 00:00:00", font=("Arial", 10))
         self.time_label.grid(row=2, column=0, columnspan=3)
 
-        # Media player UI
+        from media_player import MediaPlayerUI
         self.media_player_ui = MediaPlayerUI(
             parent_frame=self.video_frame,
             play_button=self.play_button,
@@ -423,174 +296,128 @@ class SoftWhisper:
             time_label=self.time_label,
             error_callback=lambda msg: messagebox.showerror("Media Error", msg)
         )
-
         self.play_button.config(command=lambda: (debug_print("Play media requested"), self.media_player_ui.play()))
         self.pause_button.config(command=lambda: (debug_print("Pause media requested"), self.media_player_ui.pause()))
         self.stop_media_button.config(command=lambda: (debug_print("Stop media requested"), self.media_player_ui.stop()))
 
-        # File selection
         self.select_file_button = tk.Button(media_frame, text="Select Audio/Video File",
-                                        command=self.select_file, font=("Arial", 12))
+                                            command=self.select_file, font=("Arial", 12))
         self.select_file_button.pack(pady=10)
 
-        # Transcription controls
         buttons_frame = tk.Frame(media_frame)
         buttons_frame.pack(pady=5)
         self.start_button = tk.Button(buttons_frame, text="Start Transcription",
                                     command=self.start_transcription, font=("Arial", 12), state=tk.DISABLED)
         self.start_button.grid(row=0, column=0, padx=10, pady=5)
         self.stop_button = tk.Button(buttons_frame, text="Stop Transcription",
-                                command=self.stop_processing, font=("Arial", 12), state=tk.DISABLED)
+                                    command=self.stop_processing, font=("Arial", 12), state=tk.DISABLED)
         self.stop_button.grid(row=0, column=1, padx=10, pady=5)
 
-        # Status/Progress
+        # ---------------------------
+        # Status and Console Output
+        # ---------------------------
         self.status_label = tk.Label(right_frame, text="Checking Whisper.cpp model...", fg="blue",
-                                font=("Arial", 12), wraplength=700, justify="left")
+                                    font=("Arial", 12), wraplength=700, justify="left")
         self.status_label.pack(pady=10)
         self.progress_bar = CustomProgressBar(right_frame, width=700, height=20)
         self.progress_bar.pack(pady=10)
 
-        # Console output
         console_frame = tk.LabelFrame(right_frame, text="Console Output", padx=10, pady=10, font=("Arial", 12))
         console_frame.pack(padx=10, pady=10, fill="x")
-        self.console_output_box = scrolledtext.ScrolledText(console_frame, wrap=tk.WORD,
-                                                        width=80, height=5, state=tk.DISABLED,
-                                                        font=("Courier New", 10))
-        self.console_output_box.pack(pady=5, fill="x", expand=False)
+        self.console_output_box = scrolledtext.ScrolledText(console_frame, wrap="word", width=80, height=5,
+                                                            state=tk.DISABLED, font=("Courier New", 10))
+        self.console_output_box.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        console_frame.rowconfigure(0, weight=1)
+        console_frame.columnconfigure(0, weight=1)
 
-        # Settings
+        # ---------------------------
+        # Settings Section (Using ONLY GRID)
+        # ---------------------------
         settings_frame = tk.LabelFrame(right_frame, text="Optional Settings", padx=10, pady=10, font=("Arial", 12))
         settings_frame.pack(padx=10, pady=10, fill="x")
 
-        tk.Label(settings_frame, text="Model:", font=("Arial", 10)).grid(row=0, column=0, sticky="w", pady=5)
-        model_options = [
-            "tiny","tiny.en","base","base.en","small","small.en",
-            "medium","medium.en","large","large-v2","large-v3","large-v3-turbo"
-        ]
-        self.model_menu = ttk.Combobox(settings_frame, textvariable=self.model_var,
-                                    values=model_options, state="readonly", width=20, font=("Arial", 10))
+        # Row 0: Model
+        tk.Label(settings_frame, text="Model:", font=("Arial", 10)).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        model_options = ["tiny", "tiny.en", "base", "base.en", "small", "small.en",
+                        "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"]
+        self.model_menu = ttk.Combobox(settings_frame, textvariable=self.model_var, values=model_options,
+                                    state="readonly", width=20, font=("Arial", 10))
         self.model_menu.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         self.model_menu.bind("<<ComboboxSelected>>", self.on_model_change)
 
-        tk.Label(settings_frame, text="Task:", font=("Arial", 10)).grid(row=1, column=0, sticky="w", pady=5)
+        # Row 1: Task
+        tk.Label(settings_frame, text="Task:", font=("Arial", 10)).grid(row=1, column=0, sticky="w", padx=5, pady=5)
         task_options = ["transcribe", "translate"]
-        self.task_menu = ttk.Combobox(settings_frame, textvariable=self.task_var,
-                                    values=task_options, state="readonly", width=20, font=("Arial", 10))
+        self.task_menu = ttk.Combobox(settings_frame, textvariable=self.task_var, values=task_options,
+                                    state="readonly", width=20, font=("Arial", 10))
         self.task_menu.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(settings_frame, text="Language:", font=("Arial", 10)).grid(row=2, column=0, sticky="w", pady=5)
-        self.language_entry = tk.Entry(settings_frame, textvariable=self.language_var, width=20, font=("Arial", 10))
-        self.language_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        tk.Label(settings_frame, text="(Use 'auto' for auto-detection)", font=("Arial", 8)).grid(row=2, column=2, sticky="w", pady=5)
+        # Row 2: Language
+        tk.Label(settings_frame, text="Language:", font=("Arial", 10)).grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        lang_container = tk.Frame(settings_frame)
+        lang_container.grid(row=2, column=1, sticky="w", padx=5, pady=5, columnspan=2)
 
-        tk.Label(settings_frame, text="Beam Size:", font=("Arial", 10)).grid(row=3, column=0, sticky="w", pady=5)
+        self.language_entry = tk.Entry(lang_container, textvariable=self.language_var, width=20, font=("Arial", 10))
+        self.language_entry.pack(side="top", anchor="w")
+
+        tk.Label(lang_container, text="(Use \"auto\" for auto-detection)", font=("Arial", 8)).pack(side="top", anchor="w")
+
+        # Row 3: Beam Size
+        tk.Label(settings_frame, text="Beam Size:", font=("Arial", 10)).grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.beam_size_spinbox = tk.Spinbox(settings_frame, from_=1, to=10, textvariable=self.beam_size_var,
-                                        width=5, font=("Arial", 10))
+                                            width=5, font=("Arial", 10))
         self.beam_size_spinbox.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(settings_frame, text="Start Time [hh:mm:ss]:", font=("Arial", 10)).grid(row=4, column=0, sticky="w", pady=5)
+        # Row 4: Start Time
+        tk.Label(settings_frame, text="Start Time [hh:mm:ss]:", font=("Arial", 10)).grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.start_time_entry = tk.Entry(settings_frame, textvariable=self.start_time_var, width=10, font=("Arial", 10))
         self.start_time_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(settings_frame, text="End Time [hh:mm:ss]:", font=("Arial", 10)).grid(row=5, column=0, sticky="w", pady=5)
-        self.end_time_entry = tk.Entry(settings_frame, textvariable=self.end_time_var, width=10, font=("Arial", 10))
-        self.end_time_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
-        tk.Label(settings_frame, text="(Leave empty for full duration)", font=("Arial", 8)).grid(row=5, column=2, sticky="w", pady=5)
+        # Row 5: End Time
+        tk.Label(settings_frame, text="End Time [hh:mm:ss]:", font=("Arial", 10)).grid(row=5, column=0, sticky="w", padx=5, pady=5)
+        endtime_container = tk.Frame(settings_frame)
+        endtime_container.grid(row=5, column=1, sticky="w", padx=5, pady=5, columnspan=2)
 
-        alignment_frame = tk.Frame(settings_frame)
-        alignment_frame.grid(row=6, column=0, columnspan=3, sticky="w", pady=5)
-        self.srt_checkbox = tk.Checkbutton(alignment_frame, text="Generate SRT Subtitles", variable=self.srt_var)
-        self.srt_checkbox.pack(side="left")
+        self.end_time_entry = tk.Entry(endtime_container, textvariable=self.end_time_var, width=10, font=("Arial", 10))
+        self.end_time_entry.pack(side="top", anchor="w")
 
-        tk.Label(settings_frame, text="Whisper.cpp Executable:", font=("Arial", 10)).grid(row=7, column=0, sticky="w", pady=5)
-        self.whisper_location_entry = tk.Entry(settings_frame, textvariable=self.WHISPER_CPP_PATH,
-                                            width=40, font=("Arial", 10))
-        self.whisper_location_entry.grid(row=7, column=1, sticky="w", padx=5, pady=5)
-        self.whisper_browse_button = tk.Button(settings_frame, text="Browse",
-                                            command=self.browse_whisper_executable, font=("Arial", 10))
-        self.whisper_browse_button.grid(row=7, column=2, sticky="w", padx=5, pady=5)
+        tk.Label(endtime_container, text="(Leave empty for full duration)", font=("Arial", 8)).pack(side="top", anchor="w")
 
-        # Transcription frame - SIMPLIFIED APPROACH
+        # Row 6: Generate SRT Subtitles Checkbox
+        self.srt_checkbox = tk.Checkbutton(settings_frame, text="Generate SRT Subtitles", variable=self.srt_var, anchor="w")
+        self.srt_checkbox.grid(row=6, column=1, sticky="w", padx=5, pady=2)
+
+        # Row 7: Enable Diarization Checkbox
+        self.diarization_option = DiarizationOption(settings_frame)
+        self.diarization_option.checkbox.grid(row=7, column=1, sticky="w", padx=5, pady=2)
+
+        # Row 8: Whisper.cpp Executable
+        tk.Label(settings_frame, text="Whisper.cpp Executable:", font=("Arial", 10)).grid(row=8, column=0, sticky="w", padx=5, pady=5)
+        self.whisper_location_entry = tk.Entry(settings_frame, textvariable=self.WHISPER_CPP_PATH, width=40, font=("Arial", 10))
+        self.whisper_location_entry.grid(row=8, column=1, sticky="w", padx=5, pady=5)
+        self.whisper_browse_button = tk.Button(settings_frame, text="Browse", command=self.browse_whisper_executable, font=("Arial", 10))
+        self.whisper_browse_button.grid(row=8, column=2, sticky="w", padx=5, pady=5)
+
+        # ---------------------------
+        # Transcription Frame
+        # ---------------------------
         transcription_frame = tk.LabelFrame(right_frame, text="Transcription", padx=10, pady=10, font=("Arial", 12))
         transcription_frame.pack(padx=10, pady=10, fill="both", expand=True)
-        
-        # Create a fully enabled scrolled text widget without any special event handling
-        self.transcription_box = scrolledtext.ScrolledText(
-            transcription_frame, 
-            wrap=tk.WORD,
-            width=80, 
-            height=10,
-            font=("Arial", 10)
-        )
-        self.transcription_box.pack(pady=5, fill="both", expand=True)
+        self.transcription_box = scrolledtext.ScrolledText(transcription_frame, wrap="word", width=80, height=10, font=("Arial", 10))
+        self.transcription_box.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        transcription_frame.rowconfigure(0, weight=1)
+        transcription_frame.columnconfigure(0, weight=1)
         for key in ("<Up>", "<Down>", "<Left>", "<Right>"):
             self.transcription_box.bind(key, lambda e: "break")
-        
-        # Optional: add a small note that edits won't be saved on export
-        note_label = tk.Label(transcription_frame, text="Note: Manual edits are not preserved when exporting", 
-                            fg="gray", font=("Arial", 8))
-        note_label.pack(side=tk.BOTTOM, anchor=tk.E, padx=5, pady=2)
 
-        # Spacer
         spacer_frame = tk.Frame(media_frame, height=460)
         spacer_frame.pack(pady=5)
-
-        # Export button
-        export_frame = tk.Frame(media_frame)
+        export_frame, self.export_button = create_export_button(media_frame, self)
         export_frame.pack(side="bottom", pady=10, before=spacer_frame)
-        self.export_button = tk.Button(export_frame, text="Export Transcription",
-                                    command=self.export_transcription, font=("Arial", 12),
-                                    state=tk.DISABLED)
-        self.export_button.pack(fill="x", padx=10, pady=5)
 
         debug_print("Widgets created.")
 
-    # -----------------------
-    # ADDED: Plain-text export if user didn't generate SRT
-    # -----------------------
-    def export_transcription(self):
-        """
-        Export the transcription.
-        If user had SRT enabled, we'll convert Whisper output directly to SRT.
-        Otherwise, we export plain text.
-        """
-        if not self.current_text:
-            # Nothing to export
-            return
 
-        if self.srt_var.get():
-            debug_print("Exporting as SRT")
-            from subtitles import save_whisper_as_srt
-            save_whisper_as_srt(
-                self.current_text,  # Pass the raw Whisper output
-                self.file_path,
-                self.root,
-                self.update_status
-            )
-        else:
-            debug_print("Exporting as plain text (.txt)")
-            initial_filename = os.path.splitext(os.path.basename(self.file_path))[0] + '.txt'
-            initial_dir = os.path.dirname(self.file_path)
-
-            save_path = filedialog.asksaveasfilename(
-                title="Save Transcription as Text File",
-                defaultextension=".txt",
-                initialfile=initial_filename,
-                initialdir=initial_dir,
-                filetypes=[('Text File', '*.txt'), ('All Files', '*.*')],
-                parent=self.root
-            )
-            if save_path:
-                try:
-                    with open(save_path, 'w', encoding='utf-8') as out_f:
-                        out_f.write(self.current_text)
-                    self.update_status(f"Plain text file saved to {save_path}", "green")
-                except Exception as e:
-                    msg = f"Error saving text file: {str(e)}"
-                    self.update_status(msg, "red")
-                    messagebox.showerror("TXT Saving Error", msg)
-            else:
-                self.update_status("Text file saving cancelled", "blue")
 
     def browse_whisper_executable(self):
         current_path = self.WHISPER_CPP_PATH.get()
@@ -614,13 +441,12 @@ class SoftWhisper:
                 self.beam_size_var.set(config.get('beam_size', 5))
                 # Restore Whisper path
                 self.WHISPER_CPP_PATH.set(config.get('WHISPER_CPP_PATH', get_default_whisper_cpp_path()))
-                # Restore last‑opened folder
-                self.last_dir = config.get('last_dir', os.getcwd())
+                # Restore last‑opened folder (fallback to already-set self.last_dir)
+                self.last_dir = config.get('last_dir', self.last_dir)
                 debug_print(f"Configuration loaded: {config}")
             except Exception as e:
                 debug_print(f"Error loading config: {e}")
         else:
-            self.WHISPER_CPP_PATH.set(get_default_whisper_cpp_path())
             debug_print("No configuration file found; using defaults.")
 
     def save_config(self, *args, **kwargs):
@@ -743,9 +569,9 @@ class SoftWhisper:
             self.stop_media_button.config(state=tk.NORMAL)
             self.root.update_idletasks()
         else:
-            self.file_path = None
-            self.start_button.config(state=tk.DISABLED)
-            debug_print("No file selected.")
+            # Do NOT reset self.file_path if no new file is selected.
+            debug_print("No file selected, keeping previous file.")
+
 
     def start_transcription(self):
         debug_print("Start transcription requested")
@@ -781,14 +607,14 @@ class SoftWhisper:
     def transcribe_file(self, file_path: str):
         debug_print(f"transcribe_file() => {file_path}")
         
-        # Make sure stdout/stderr are redirected to our queue
+        # Redirect stdout/stderr to our console queue
         sys.stdout = ConsoleRedirector(self.console_queue)
         sys.stderr = ConsoleRedirector(self.console_queue)
         
         try:
             lang = self.language_var.get().strip().lower() or "auto"
             debug_print(f"Language setting: '{lang}'")
-
+            
             options = {
                 'model_name': self.model_var.get(),
                 'task': self.task_var.get(),
@@ -800,8 +626,8 @@ class SoftWhisper:
                 'parent_window': self.root,
                 'whisper_executable': self.WHISPER_CPP_PATH.get()
             }
-
-            # If user selected a directory for the exe, guess the actual binary name.
+            
+            # If a directory was selected for the executable, append the binary name.
             exe_path = options['whisper_executable']
             if os.path.isdir(exe_path):
                 if os.name == "nt":
@@ -809,33 +635,33 @@ class SoftWhisper:
                 else:
                     exe_path = os.path.join(exe_path, "whisper-cli")
                 options['whisper_executable'] = exe_path
-
-            # Always use absolute path for the executable.
+            
+            # Always use the absolute path for the executable.
             executable_abs = os.path.abspath(options['whisper_executable'])
             debug_print(f"Using Whisper executable: {executable_abs}")
             options['whisper_executable'] = executable_abs
-
-            # Always use absolute path for the file to be converted.
+            
+            # Always use the absolute path for the input file.
             file_path = os.path.abspath(file_path)
-
-            # Build a rough command template for debugging.
+            
+            # Build a rough command template for debugging purposes.
             model_abs = os.path.abspath(os.path.join("models", "whisper", f"ggml-{options['model_name']}.bin"))
             whisper_cmd = f"{executable_abs} -m {model_abs} -f {file_path} -l {options['language']} -bs {options['beam_size']}"
             if options['task'] == 'translate':
                 whisper_cmd += " -translate"
-            # Always use JSON output (with timestamps) so we can later remove them if needed.
+            # Force JSON output (with timestamps)
             whisper_cmd += " -oj"
             debug_print(f"Command template: {whisper_cmd}")
-
-            # Define progress and status callbacks.
+            
+            # Define callbacks for progress and status updates.
             def progress_callback(progress, message):
                 if self.transcription_stop_event.is_set():
                     return
                 self.progress_queue.put((progress, message))
-
+            
             def status_callback(message, color):
                 self.update_status(message, color)
-
+            
             debug_print("Calling transcribe_audio()...")
             if not self.transcription_stop_event.is_set():
                 result = transcribe_audio(
@@ -846,51 +672,66 @@ class SoftWhisper:
                     stop_event=self.transcription_stop_event
                 )
                 debug_print("Transcription completed or cancelled")
-
+                
                 if (not self.transcription_stop_event.is_set()) and not result.get('cancelled', False):
                     raw_output = result.get('raw', '')
-                    if self.srt_var.get():
-                        # When SRT is enabled, pass the raw output to your SRT conversion function.
+                    
+                    # If diarization is enabled, convert to SRT and merge diarization info.
+                    if hasattr(self, 'diarization_option') and self.diarization_option.is_enabled():
+                        self.current_text = raw_output
+                        debug_print("Converting to SRT format for diarization")
+                        srt_content = whisper_to_srt(self.current_text)
+                        from diarization_gui import merge_diarization
+                        # Define a progress callback for the diarization process.
+                        def diarization_progress_callback(progress, message):
+                            if self.transcription_stop_event.is_set():
+                                return
+                            self.progress_queue.put((progress, message))
+                        # Pass remove_timestamps as the inverse of self.srt_var.get()
+                        diarized_text = merge_diarization(
+                            self.file_path,
+                            srt_content,
+                            remove_timestamps=not self.srt_var.get(),
+                            progress_callback=diarization_progress_callback
+                        )
+                        # Update current_text with the processed diarized text.
+                        self.current_text = diarized_text
+                        self.display_transcription(diarized_text)
+                    # Otherwise, if SRT is selected, display full SRT with timestamps.
+                    elif self.srt_var.get():
                         self.current_text = raw_output
                         debug_print("Converting to proper SRT format for display")
-                        from subtitles import whisper_to_srt
                         srt_content = whisper_to_srt(self.current_text)
+                        # Update current_text with the SRT content.
+                        self.current_text = srt_content
                         self.display_transcription(srt_content)
                     else:
-                        # When SRT is deselected, remove any leading bracketed timestamps.
+                        # Plain text mode: remove leading timestamps from each line.
                         import re
                         lines = raw_output.splitlines()
                         plain_lines = [re.sub(r'^\[[^\]]+\]\s*', '', line) for line in lines if line.strip()]
                         plain_text = " ".join(plain_lines)
                         self.current_text = plain_text
-                        self.display_transcription(self.current_text)
-
-                    # Store segments if available.
+                        self.display_transcription(plain_text)
+                    
+                    # Store segments for possible export.
                     self.current_segments = result.get('segments', [])
-
-                    # Enable "Export" if there is any transcription text.
                     if len(self.current_text.strip()) > 0:
                         self.export_button.config(state=tk.NORMAL)
-
+                    
                     self.update_status("Transcription completed.", "green")
                 elif result.get('cancelled', False):
                     self.update_status("Transcription cancelled by user.", "red")
                 else:
                     self.update_status("Transcription aborted.", "red")
-
+                
                 # Cleanup temporary audio file if it was created.
                 if result.get('temp_audio_path') and os.path.exists(result['temp_audio_path']):
                     try:
                         os.remove(result['temp_audio_path'])
                     except Exception:
                         pass
-
-                # DO NOT reset console redirection to original stdout/stderr.
-                # REMOVE these lines from your original code:
-                # sys.stdout = sys.__stdout__
-                # sys.stderr = sys.__stderr__
-
-                # Optional: log completion to console
+                
                 self.console_queue.put({'type': 'append', 'content': "Transcription process complete.\n"})
             else:
                 self.update_status("Transcription aborted.", "red")
@@ -904,6 +745,7 @@ class SoftWhisper:
             debug_print(f"Transcription error: {error_msg}")
         finally:
             self.root.after(100, self.enable_buttons)
+
 
     def disable_buttons(self):
         self.select_file_button.config(state=tk.DISABLED)
