@@ -13,7 +13,7 @@ You can easily select custom models, languages, and tasks, fine-tune transcripti
 
 1. Run SoftWhisper.bat:
 .\SoftWhisper.bat
-When the GUI launches, follow these steps for transcription (image credits [Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)): 
+When the GUI launches, follow these steps for transcription (screenshot credits: [Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)): 
 
 ![Softwhisper interface – Credits to Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)
 
