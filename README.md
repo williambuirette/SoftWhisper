@@ -4,16 +4,16 @@ SoftWhisper simplifies audio and video transcription using the powerful Whisper 
 You can easily select custom models, languages, and tasks, fine-tune transcription with beam size adjustment, and specify start and end times for targeted segments.
 
 ## Features
-🎯 High-accuracy transcription (using Whisper model)
-👥 Speaker identification
-🌍 Supports all languages supported by the Whisper model (+30)
-🎮 User-friendly GUI interface
+🎯 High-accuracy transcription (using Whisper model)<br>
+👥 Speaker identification<br>
+🌍 Supports all languages supported by the Whisper model (+30)<br>
+🎮 User-friendly GUI interface<br>
 
 ## Usage
 
 1. Run SoftWhisper.bat:
 .\SoftWhisper.bat
-When the GUI launches, follow these steps for transcription:
+When the GUI launches, follow these steps for transcription (image credits [Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)): 
 
 ![Softwhisper interface – Credits to Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)
 
