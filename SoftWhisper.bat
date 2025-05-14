@@ -16,6 +16,11 @@ if %errorlevel% neq 0 (
   set MISSING_PACKAGES=!MISSING_PACKAGES! inaSpeechSegmenter
 )
 
+:: Check opencv-python
+python -c "import cv2" 2>nul
+if %errorlevel% neq 0 (
+  set MISSING_PACKAGES=!MISSING_PACKAGES! opencv-python
+)
 
 :: Check pydub
 python -c "import pydub" 2>nul
