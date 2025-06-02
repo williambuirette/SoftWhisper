@@ -6,10 +6,6 @@
 </p>
 
 <p align="center">
-   <img src="docs/header.png" alt="SoftWhisper Header">
-</p>
-
-<p align="center">
    <img src="https://img.shields.io/badge/Python-3.7%2B-blue.svg" alt="Python 3.7+"/>
    <img src="https://img.shields.io/badge/FFmpeg-Required-green.svg" alt="FFmpeg"/>
    <img src="https://img.shields.io/badge/VLC-Required-orange.svg" alt="VLC"/>
