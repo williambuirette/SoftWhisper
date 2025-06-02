@@ -50,8 +50,8 @@ pip install -r requirements.txt
    - 「開始」ボタンをクリック
 
 <p align="center">
-   [[Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)): 
-![Softwhisper interface – Credits to Sunwood-ai-labs](https://github.com/user-attachments/assets/d28b227a-0ae3-4336-a655-abfbf35ef3e9)](https://private-user-images.githubusercontent.com/28734029/433144803-d28b227a-0ae3-4336-a655-abfbf35ef3e9.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDg4ODg1NzEsIm5iZiI6MTc0ODg4ODI3MSwicGF0aCI6Ii8yODczNDAyOS80MzMxNDQ4MDMtZDI4YjIyN2EtMGFlMy00MzM2LWE2NTUtYWJmYmYzNWVmM2U5LnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA2MDIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNjAyVDE4MTc1MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWFiMWQyZjFhYTM5YjY5ZmIxNjk4ODIxZDBlNDE1MDVmYjJlMjc3MDIzMWQ3NjUxNGI4NGNlY2E0NTAzZDBkNzUmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.stYqWHpMt37__Kex45aYyS4K2l2WrVysZwqYbyo2iaU)
+   ![image](https://github.com/user-attachments/assets/e44aaf56-96bd-4112-99e7-6f694cadd1ac)
+
 </p>
 
 ## 機能
