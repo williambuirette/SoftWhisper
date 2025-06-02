@@ -52,6 +52,12 @@ if %errorlevel% neq 0 (
   set MISSING_PACKAGES=!MISSING_PACKAGES! requests
 )
 
+:: Check opencv-python
+python -c "import cv2" 2>nul
+if %errorlevel% neq 0 (
+  set MISSING_PACKAGES=!MISSING_PACKAGES! opencv-python
+)
+
 :: If missing packages, prompt to install
 if not "!MISSING_PACKAGES!"=="" (
   echo The following packages are required but not installed:!MISSING_PACKAGES!
