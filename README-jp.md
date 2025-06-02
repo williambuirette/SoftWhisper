@@ -50,7 +50,7 @@ pip install -r requirements.txt
    - 「開始」ボタンをクリック
 
 <p align="center">
-   <img src="![image](https://github.com/user-attachments/assets/34bddf91-e236-4216-9331-43b04d8b5341)" alt="SoftWhisper Demo" width="600px">
+   <img src="!![image](https://github.com/user-attachments/assets/afd01e1f-a1f2-4d92-8bca-5fc392fd8272) alt="SoftWhisper demo">
 </p>
 
 ## 機能
