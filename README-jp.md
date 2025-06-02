@@ -49,10 +49,7 @@ pip install -r requirements.txt
    - 必要に応じて話者分離機能を有効化
    - 「開始」ボタンをクリック
 
-<p align="center">
    ![image](https://github.com/user-attachments/assets/e44aaf56-96bd-4112-99e7-6f694cadd1ac)
-
-</p>
 
 ## 機能
 
