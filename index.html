@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Transcription Interface</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-microphone-alt"></i> Whisper Transcription</h1>
+                <p>Interface moderne pour la transcription vocale</p>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Zone de chargement de fichier -->
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h3>Charger un fichier audio</h3>
+                        <p>Glissez-déposez votre fichier ici ou cliquez pour sélectionner</p>
+                        <button class="btn btn-primary" id="selectFileBtn">
+                            <i class="fas fa-folder-open"></i> Sélectionner un fichier
+                        </button>
+                        <input type="file" id="fileInput" accept="audio/*,video/*" style="display: none;">
+                        <div class="supported-formats">
+                            <small>Formats supportés: MP3, WAV, M4A, FLAC, MP4, MOV</small>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Lecteur audio -->
+            <section class="audio-player-section" id="playerSection" style="display: none;">
+                <div class="audio-player">
+                    <div class="player-header">
+                        <h3 id="fileName">Aucun fichier</h3>
+                        <div class="file-info">
+                            <span id="fileSize"></span>
+                            <span id="fileDuration"></span>
+                        </div>
+                    </div>
+                    
+                    <audio id="audioPlayer" controls style="display: none;"></audio>
+                    
+                    <div class="custom-controls">
+                        <button class="control-btn" id="playBtn">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button class="control-btn" id="pauseBtn" style="display: none;">
+                            <i class="fas fa-pause"></i>
+                        </button>
+                        <button class="control-btn" id="stopBtn">
+                            <i class="fas fa-stop"></i>
+                        </button>
+                        
+                        <div class="progress-container">
+                            <div class="time-display" id="currentTime">00:00</div>
+                            <div class="progress-bar">
+                                <div class="progress" id="progress"></div>
+                                <input type="range" id="progressSlider" min="0" max="100" value="0">
+                            </div>
+                            <div class="time-display" id="totalTime">00:00</div>
+                        </div>
+                        
+                        <div class="volume-control">
+                            <i class="fas fa-volume-up"></i>
+                            <input type="range" id="volumeSlider" min="0" max="100" value="100">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Paramètres de transcription -->
+            <section class="settings-section">
+                <div class="settings-panel">
+                    <h3><i class="fas fa-cog"></i> Paramètres de transcription</h3>
+                    
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <label for="modelSelect">Modèle Whisper</label>
+                            <select id="modelSelect">
+                                <option value="tiny">Tiny (Rapide, moins précis)</option>
+                                <option value="base" selected>Base (Équilibré)</option>
+                                <option value="small">Small (Plus précis)</option>
+                                <option value="medium">Medium (Très précis)</option>
+                                <option value="large">Large (Maximum de précision)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <label for="languageSelect">Langue</label>
+                            <select id="languageSelect">
+                                <option value="auto">Détection automatique</option>
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <option value="es">Espagnol</option>
+                                <option value="de">Allemand</option>
+                                <option value="it">Italien</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <label for="taskSelect">Tâche</label>
+                            <select id="taskSelect">
+                                <option value="transcribe">Transcription</option>
+                                <option value="translate">Traduction en anglais</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <label for="startTime">Début (HH:MM:SS)</label>
+                            <input type="text" id="startTime" placeholder="00:00:00">
+                        </div>
+                        
+                        <div class="setting-group">
+                            <label for="endTime">Fin (HH:MM:SS)</label>
+                            <input type="text" id="endTime" placeholder="Fin du fichier">
+                        </div>
+                        
+                        <div class="setting-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="generateSRT">
+                                <span class="checkmark"></span>
+                                Générer des sous-titres SRT
+                            </label>
+                        </div>
+                        
+                        <div class="setting-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="speakerDetection">
+                                <span class="checkmark"></span>
+                                Identification des locuteurs
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Zone de transcription -->
+            <section class="transcription-section">
+                <div class="transcription-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-file-alt"></i> Transcription</h3>
+                        <div class="transcription-actions">
+                            <button class="btn btn-primary" id="startTranscription" disabled>
+                                <i class="fas fa-play-circle"></i> Démarrer la transcription
+                            </button>
+                            <button class="btn btn-danger" id="stopTranscription" style="display: none;">
+                                <i class="fas fa-stop-circle"></i> Arrêter
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Barre de progression -->
+                    <div class="progress-section" id="progressSection" style="display: none;">
+                        <div class="progress-info">
+                            <span id="progressText">Préparation...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="progressBarFill"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Zone de texte de transcription -->
+                    <div class="transcription-content">
+                        <div class="empty-state" id="emptyState">
+                            <i class="fas fa-microphone-slash"></i>
+                            <p>Aucune transcription disponible</p>
+                            <small>Chargez un fichier audio et démarrez la transcription</small>
+                        </div>
+                        
+                        <div class="transcription-editor" id="transcriptionEditor" style="display: none;">
+                            <div class="editor-toolbar">
+                                <button class="toolbar-btn" id="copyBtn" title="Copier le texte">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button class="toolbar-btn" id="downloadBtn" title="Télécharger">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="toolbar-btn" id="clearBtn" title="Effacer">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                <div class="word-count">
+                                    <span id="wordCount">0 mots</span>
+                                </div>
+                            </div>
+                            <textarea id="transcriptionText" placeholder="La transcription apparaîtra ici..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Console de logs -->
+            <section class="console-section">
+                <details class="console-details">
+                    <summary>
+                        <i class="fas fa-terminal"></i> Console de débogage
+                        <span class="log-count" id="logCount">(0)</span>
+                    </summary>
+                    <div class="console-content">
+                        <div class="console-header">
+                            <button class="btn btn-sm" id="clearConsole">
+                                <i class="fas fa-broom"></i> Effacer
+                            </button>
+                        </div>
+                        <div class="console-log" id="consoleLog"></div>
+                    </div>
+                </details>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
