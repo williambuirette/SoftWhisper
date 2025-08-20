@@ -4,8 +4,8 @@
   "description": "Interface moderne pour la transcription vocale avec Whisper",
   "main": "index.html",
   "scripts": {
-    "dev": "live-server --port=3000 --host=0.0.0.0",
-    "start": "live-server --port=3000 --host=0.0.0.0",
+    "dev": "node simple-server.js",
+    "start": "node simple-server.js",
     "server": "node server.js",
     "full": "concurrently \"npm run server\" \"npm run dev\""
   },
