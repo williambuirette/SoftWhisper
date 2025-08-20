@@ -237,12 +237,18 @@ class WhisperTranscriptionInterface {
             return;
         }
         
+        // Avertissement que c'est une démonstration
+        if (!confirm('⚠️ DÉMONSTRATION : Cette interface utilise actuellement une simulation de transcription.\n\nPour une vraie transcription, il faut intégrer une API Whisper (OpenAI API ou installation locale).\n\nContinuer avec la démonstration ?')) {
+            return;
+        }
+        
         this.isTranscribing = true;
         this.startTranscription.style.display = 'none';
         this.stopTranscription.style.display = 'inline-flex';
         this.progressSection.style.display = 'block';
         
         this.log('Démarrage de la transcription...', 'info');
+        this.log('⚠️ MODE DÉMONSTRATION : Transcription simulée', 'warning');
         
         // Simuler le processus de transcription
         this.simulateTranscription();
@@ -262,17 +268,42 @@ class WhisperTranscriptionInterface {
     }
     
     simulateTranscription() {
-        // Cette fonction simule le processus de transcription
-        // Dans un vrai projet, vous feriez appel à l'API Whisper ici
+        /* 
+         * 🚨 SIMULATION DE TRANSCRIPTION 🚨
+         * 
+         * Cette fonction simule le processus de transcription.
+         * Pour une vraie transcription, remplacez ce code par :
+         * 
+         * OPTION 1 - API OpenAI Whisper :
+         * const formData = new FormData();
+         * formData.append('file', this.audioFile);
+         * formData.append('model', 'whisper-1');
+         * 
+         * fetch('https://api.openai.com/v1/audio/transcriptions', {
+         *   method: 'POST',
+         *   headers: { 'Authorization': 'Bearer YOUR_API_KEY' },
+         *   body: formData
+         * });
+         * 
+         * OPTION 2 - API Backend local :
+         * const formData = new FormData();
+         * formData.append('audio', this.audioFile);
+         * formData.append('settings', JSON.stringify(this.getTranscriptionSettings()));
+         * 
+         * fetch('/api/transcribe', {
+         *   method: 'POST',
+         *   body: formData
+         * });
+         */
         
         let progress = 0;
         const steps = [
-            'Chargement du modèle Whisper...',
-            'Préparation de l\'audio...',
-            'Segmentation audio...',
-            'Transcription en cours...',
-            'Post-traitement...',
-            'Finalisation...'
+            '🔄 [SIMULATION] Chargement du modèle Whisper...',
+            '🔄 [SIMULATION] Préparation de l\'audio...',
+            '🔄 [SIMULATION] Segmentation audio...',
+            '🔄 [SIMULATION] Transcription en cours...',
+            '🔄 [SIMULATION] Post-traitement...',
+            '🔄 [SIMULATION] Finalisation...'
         ];
         
         let stepIndex = 0;
@@ -314,7 +345,9 @@ class WhisperTranscriptionInterface {
         this.progressSection.style.display = 'none';
         
         // Exemple de transcription
-        const sampleTranscription = `Bonjour et bienvenue dans cette démonstration de l'interface de transcription Whisper.
+        const sampleTranscription = `🎭 TRANSCRIPTION SIMULÉE 🎭
+
+Bonjour et bienvenue dans cette démonstration de l'interface de transcription Whisper.
 
 Cette interface moderne permet de charger facilement des fichiers audio et vidéo, de les lire avec des contrôles intuitifs, et de configurer la transcription selon vos besoins.
 
@@ -325,10 +358,14 @@ Vous pouvez choisir différents modèles Whisper selon vos besoins :
 
 L'interface prend en charge la détection automatique de langue, la traduction vers l'anglais, et même l'identification des locuteurs.
 
-Cette transcription est un exemple généré automatiquement pour démontrer les fonctionnalités de l'interface.`;
+Cette transcription est un exemple généré automatiquement pour démontrer les fonctionnalités de l'interface.
+
+⚠️ POUR UNE VRAIE TRANSCRIPTION :
+Intégrez l'API OpenAI Whisper ou installez Whisper localement avec un backend (Python Flask/FastAPI ou Node.js).`;
         
         this.displayTranscription(sampleTranscription);
-        this.log('Transcription terminée avec succès', 'success');
+        this.log('✅ Démonstration de transcription terminée', 'success');
+        this.log('💡 Intégrez une vraie API Whisper pour la transcription réelle', 'warning');
     }
     
     displayTranscription(text) {
