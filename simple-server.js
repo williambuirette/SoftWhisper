@@ -43,4 +43,15 @@ const server = http.createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
     console.log(`🚀 Serveur démarré sur http://127.0.0.1:${port}`);
     console.log(`📁 Interface web accessible : http://127.0.0.1:${port}`);
+}).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${port} occupé. Tentative sur le port ${port + 1}...`);
+        server.listen(port + 1, '127.0.0.1', () => {
+            console.log(`🚀 Serveur démarré sur http://127.0.0.1:${port + 1}`);
+            console.log(`📁 Interface web accessible : http://127.0.0.1:${port + 1}`);
+        });
+    } else {
+        console.error(`❌ Erreur serveur:`, err);
+        process.exit(1);
+    }
 });
