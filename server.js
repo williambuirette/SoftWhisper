@@ -4,6 +4,12 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const { exec } = require('child_process');
+
+// Tuer les processus Node existants sur les ports
+exec('ps -ef | grep "node " | grep -v grep | awk \'{print $2}\' | xargs kill -9 2>/dev/null || true', (error) => {
+    if (error) console.log('Aucun processus Node à arrêter');
+});
 
 const app = express();
 const port = 3001;
