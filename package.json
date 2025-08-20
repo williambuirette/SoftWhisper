@@ -1,0 +1,21 @@
+{
+  "name": "whisper-transcription-interface",
+  "version": "1.0.0",
+  "description": "Interface moderne pour la transcription vocale avec Whisper",
+  "main": "index.html",
+  "scripts": {
+    "dev": "live-server --port=3000 --host=0.0.0.0",
+    "start": "live-server --port=3000 --host=0.0.0.0"
+  },
+  "keywords": [
+    "whisper",
+    "transcription",
+    "audio",
+    "speech-to-text"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  }
+}
