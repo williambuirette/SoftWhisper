@@ -244,8 +244,22 @@ app.get('/api/whisper-status', (req, res) => {
     });
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
     console.log(`🚀 Serveur de transcription démarré sur http://localhost:${port}`);
     console.log(`📁 Interface web: http://localhost:${port}`);
     console.log(`🔧 API: http://localhost:${port}/api/transcribe`);
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${port} déjà utilisé. Tentative sur le port ${port + 1}...`);
+        const alternativePort = port + 1;
+        app.listen(alternativePort, () => {
+            console.log(`🚀 Serveur de transcription démarré sur http://localhost:${alternativePort}`);
+            console.log(`📁 Interface web: http://localhost:${alternativePort}`);
+            console.log(`🔧 API: http://localhost:${alternativePort}/api/transcribe`);
+        });
+    } else {
+        console.error(`❌ Erreur serveur:`, err);
+    }
 });
