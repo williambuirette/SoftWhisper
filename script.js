@@ -237,21 +237,133 @@ class WhisperTranscriptionInterface {
             return;
         }
         
-        // Avertissement que c'est une démonstration
-        if (!confirm('⚠️ DÉMONSTRATION : Cette interface utilise actuellement une simulation de transcription.\n\nPour une vraie transcription, il faut intégrer une API Whisper (OpenAI API ou installation locale).\n\nContinuer avec la démonstration ?')) {
-            return;
+        // Vérifier que le serveur backend est disponible
+        this.checkBackendStatus().then(isAvailable => {
+            if (!isAvailable) {
+                if (!confirm('⚠️ Backend non disponible : Le serveur de transcription n\'est pas accessible.\n\nDémarrez le serveur avec "node server.js" dans un terminal.\n\nContinuer avec la simulation ?')) {
+                    return;
+                }
+                this.startSimulation();
+            } else {
+                this.startRealTranscription();
+            }
+        });
+    }
+    
+    async checkBackendStatus() {
+        try {
+            const response = await fetch('http://localhost:3001/api/whisper-status');
+            const status = await response.json();
+            
+            if (status.whisperInstalled) {
+                this.log(`✅ Whisper détecté: ${status.whisperPath}`, 'success');
+                this.log(`📚 Modèles disponibles: ${status.availableModels.join(', ')}`, 'info');
+                return true;
+            } else {
+                this.log('❌ Whisper non installé ou non trouvé', 'error');
+                return false;
+            }
+        } catch (error) {
+            this.log('❌ Serveur backend non accessible', 'error');
+            return false;
         }
+    }
+    
+    startRealTranscription() {
         
         this.isTranscribing = true;
         this.startTranscription.style.display = 'none';
         this.stopTranscription.style.display = 'inline-flex';
         this.progressSection.style.display = 'block';
         
-        this.log('Démarrage de la transcription...', 'info');
-        this.log('⚠️ MODE DÉMONSTRATION : Transcription simulée', 'warning');
+        this.log('🚀 Démarrage de la transcription avec Whisper...', 'info');
         
-        // Simuler le processus de transcription
+        // Préparer les données pour l'API
+        const formData = new FormData();
+        formData.append('audio', this.audioFile);
+        formData.append('settings', JSON.stringify(this.getTranscriptionSettings()));
+        
+        // Démarrer la transcription réelle
+        this.performRealTranscription(formData);
+    }
+    
+    startSimulation() {
+        this.isTranscribing = true;
+        this.startTranscription.style.display = 'none';
+        this.stopTranscription.style.display = 'inline-flex';
+        this.progressSection.style.display = 'block';
+        
+        this.log('⚠️ MODE SIMULATION : Transcription simulée', 'warning');
         this.simulateTranscription();
+    }
+    
+    async performRealTranscription(formData) {
+        try {
+            const response = await fetch('http://localhost:3001/api/transcribe', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Erreur serveur: ${response.status}`);
+            }
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let transcriptionResult = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            switch (data.type) {
+                                case 'progress':
+                                    this.log(data.content.trim(), 'info');
+                                    break;
+                                case 'progress_percent':
+                                    this.updateTranscriptionProgress(data.percent, 'Transcription en cours...');
+                                    break;
+                                case 'complete':
+                                    transcriptionResult = data.transcription;
+                                    this.completeRealTranscription(transcriptionResult);
+                                    return;
+                                case 'error':
+                                    throw new Error(data.error);
+                            }
+                        } catch (e) {
+                            // Ignorer les erreurs de parsing JSON pour les lignes non-JSON
+                        }
+                    }
+                }
+                
+                if (!this.isTranscribing) {
+                    break; // Arrêt demandé par l'utilisateur
+                }
+            }
+            
+        } catch (error) {
+            this.log(`❌ Erreur de transcription: ${error.message}`, 'error');
+            this.stopTranscriptionProcess();
+        }
+    }
+    
+    completeRealTranscription(transcriptionResult) {
+        this.isTranscribing = false;
+        this.startTranscription.style.display = 'inline-flex';
+        this.stopTranscription.style.display = 'none';
+        this.progressSection.style.display = 'none';
+        
+        // Traiter et afficher la transcription
+        this.displayTranscription(transcriptionResult);
+        this.log('✅ Transcription terminée avec succès!', 'success');
     }
     
     stopTranscriptionProcess() {
